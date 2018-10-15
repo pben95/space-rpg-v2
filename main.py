@@ -83,13 +83,13 @@ class Player(Object):
         super().__init__(x, y, vel_x, vel_y, size_x, size_y, 0)
         self.image = arcade.load_texture("spaceship.png")
         self.thrust = {"w": False, "a": False, "s": False, "d": False}
-        self.stats = {"credits": 1000, "missiles": 50, "energy": 100, "cargo_mass": 0}
         self.laser = False
         self.rocket = False
         self.waypoint = False
         self.search = False
         self.location = None
-        self.target = {"x": 1000, "y": 1000}
+        self.target = {"x": 0, "y": 0}
+        self.stats = {"credits": 1000, "missiles": 50, "energy": 100, "cargo_mass": 0}
         self.ship = {"engine": 10, "hull": 1000, "current_hull": 1000, "laser": 1, "missile": 1, "cargo_capacity": 100}
         self.crew = []  # List holding Crew objects
         self.cargo = []  # List holding Cargo objects
@@ -106,6 +106,7 @@ class Ship(Object):
         self.att = level * 5
         self.cargo = []
         self.station = random.randrange(0, 99)
+        self.target = {"x": 10000, "y": 10000}
 
     def draw(self, game, x, y):
         game.draw_list.append(arcade.create_ellipse_outline(x, y, self.size_x, self.size_y, colors["db"], 4))
@@ -117,8 +118,32 @@ class Ship(Object):
     def damage(self, game, amount):
         self.hull -= amount
 
+    def check_fuse(self, game):
+        for i in game.object_list:
+            if i.type == 0 and i != game.player and i != self and self.hit_check(i.x, i.y, self.size_x + i.size_x, self.size_y + i.size_y):
+                self.size_x += i.size_x
+                self.size_y += i.size_y
+                self.level += i.level
+                self.hull = self.level * 100
+                self.att = self.level * 5
+                game.object_list.remove(i)
 
-class Location(Object):
+    def move_to_target(self, game):
+        if self.target["x"] < self.x:
+            self.vel_x = -4
+        elif self.target["x"] > self.x:
+            self.vel_x = 4
+        elif self.target["x"] == self.x:
+            self.vel_x = 0
+        if self.target["y"] < self.y:
+            self.vel_y = -4
+        elif self.target["y"] > self.y:
+            self.vel_y = 4
+        elif self.target["y"] == self.y:
+            self.vel_y = 0
+
+
+class Station(Object):
     def __init__(self, x, y, name):
         super().__init__(x, y, 0, 0, 80, 80, 2)
         self.name = name
@@ -252,7 +277,7 @@ class Game(arcade.Window):
         self.object_list.append(self.player)
         self.draw_list = arcade.ShapeElementList()
         for s in range(0, 100):
-            new_location = Location(random.randrange(1, self.mapX - 400), random.randrange(1, self.mapY - 400), str(s))
+            new_location = Station(random.randrange(1, self.mapX - 400), random.randrange(1, self.mapY - 400), str(s))
             self.object_list.append(new_location)
             self.locations.append(new_location)
             new_location.position = len(self.locations) - 1
@@ -305,8 +330,7 @@ class Game(arcade.Window):
     def scene1_render(self):
         self.draw_list = arcade.ShapeElementList()
         if self.player.waypoint and self.player.target:
-            # self.draw_list.append(arcade.create_ellipse_filled(400 + self.player.target["x"] - self.player.x, 400 + self.player.target["y"] - self.player.y, 10, 10, arcade.color.PINK))
-            self.draw_list.append(arcade.create_line(400, 400, 400 + self.player.target["x"] - self.player.x, 400 + self.player.target["y"] - self.player.y, arcade.color.PINK, 1))
+            self.draw_list.append(arcade.create_line(400, 400, 400 + self.player.target["x"] - self.player.x, 400 + self.player.target["y"] - self.player.y, arcade.color.LIME_GREEN, 1))
         self.player.move(self)
         # self.player.draw(self, 400, 400)
         if self.player.x < 400:
@@ -320,12 +344,15 @@ class Game(arcade.Window):
             self.draw_list.append(arcade.create_line(0, 400 + (self.mapY - self.player.y), 400 + (self.mapX - self.player.x),
                              400 + (self.mapY - self.player.y), colors["white"], 4))
         self.stars_render()
-        for i in range(1, len(self.object_list)):
-            obj = self.object_list[i]
-            if (abs(self.player.x - obj.x) < 800) and (abs(self.player.y - obj.y)) < 800:
-                if obj.type == 0:
-                    obj.move(self)
+        for obj in self.object_list:
+            if obj != self.player and (abs(self.player.x - obj.x) < 800) and (abs(self.player.y - obj.y)) < 800:
                 obj.draw(self, 400 - (self.player.x - obj.x), 400 - (self.player.y - obj.y))
+                if obj.type == 0:
+                    obj.target["x"], obj.target["y"] = self.player.x, self.player.y
+                    obj.move(self)
+                    obj.move_to_target(self)
+                    obj.check_fuse(self)
+
 
     def scene1_text(self):
         if self.player.waypoint and self.player.target:
@@ -352,16 +379,12 @@ class Game(arcade.Window):
             self.player.thrust["s"] = True
         if key == arcade.key.D or key == arcade.key.RIGHT:
             self.player.thrust["d"] = True
-        if key == arcade.key.H:
+        if key == arcade.key.G:
             if self.player.search:
                 self.player.search, self.player.waypoint = False, False
             else:
                 self.player.search, self.player.waypoint = True, True
         if key == arcade.key.E:
-            if self.player.hit_check(self.player.target["x"], self.player.target["y"], 40, 40):
-                new_target = self.locations[random.randrange(1, len(self.locations))]
-                self.player.target["x"], self.player.target["y"] = new_target.x, new_target.y
-                self.player.stats["credits"] += 100
             for i in range(1, len(self.object_list)):
                 obj = self.object_list[i]
                 if self.player.hit_check(obj.x, obj.y, self.player.size_x + obj.size_x, self.player.size_y + obj.size_y):
@@ -375,6 +398,7 @@ class Game(arcade.Window):
                         if self.player.ship["current_hull"] > self.player.ship["hull"]:
                             self.player.ship["current_hull"] = self.player.ship["hull"]
                         self.player.stats["credits"] += 25
+                        self.closest_station().favor += 1
                     elif obj.type == 2:
                         self.player.location = obj.position
                         self.scene = 4
@@ -386,11 +410,6 @@ class Game(arcade.Window):
                     break
         if key == arcade.key.SPACE:
             self.player.vel_x, self.player.vel_y = 0, 0
-        if key == arcade.key.G:
-            if self.player.waypoint:
-                self.player.waypoint = False
-            elif not self.player.waypoint:
-                self.player.waypoint = True
 
     def scene2_render(self):
         self.draw_list = arcade.ShapeElementList()
@@ -405,7 +424,18 @@ class Game(arcade.Window):
     def scene2_text(self):
         offset = 0
         arcade.draw_text(self.menu_options[self.cursor], 320, 650, colors["black"], font_size=20)
-        if self.cursor == 2:
+        if self.cursor == 0:
+            return
+        elif self.cursor == 1:
+            for k, v in self.player.ship.items():
+                text = str(k).capitalize()
+                if k == "cargo_capacity":
+                    text = "Cargo Capacity"
+                elif k == "current_hull":
+                    text = "Current Hull"
+                arcade.draw_text(text + ": " + str(v), 340, 600 - (offset * 50), colors["black"])
+                offset += 1
+        elif self.cursor == 2:
             arcade.draw_text("X: " + str(self.player.x) + " / " + "Y:" + str(self.player.y), 340, 600,
                              colors["black"])
             for k, v in self.player.stats.items():
@@ -424,15 +454,6 @@ class Game(arcade.Window):
                     arcade.draw_text(str(self.player.cargo[item.position]), 340, 575 - (100 * i), colors["black"])
                 else:
                     break
-        elif self.cursor == 1:
-            for k, v in self.player.ship.items():
-                text = str(k).capitalize()
-                if k == "cargo_capacity":
-                    text = "Cargo Capacity"
-                elif k == "current_hull":
-                    text = "Current Hull"
-                arcade.draw_text(text + ": " + str(v), 340, 600 - (offset * 50), colors["black"])
-                offset += 1
         elif self.cursor == 4:
             arcade.draw_text("Roster: " + str(1 + self.list_pos) + "/" + str(len(self.player.crew)), 450, 655,
                              colors["black"])
@@ -477,11 +498,7 @@ class Game(arcade.Window):
                 if self.list_pos > 0:
                     self.list_pos -= 1
         if key == arcade.key.E:
-            if self.cursor == 4:
-                try:
-                    self.player.crew.pop(self.list_pos)
-                except IndexError:
-                    return
+            return
 
     def scene3_render(self):
         self.draw_list = arcade.ShapeElementList()
@@ -532,7 +549,7 @@ class Game(arcade.Window):
                     self.player.stats["missiles"] -= 1
                     self.enemy.damage(self, 20 * self.player.ship["missile"])
                 elif self.battle_cursor == 2:
-                    self.player.ship["current_hull"] += 10
+                    self.player.ship["current_hull"] += self.enemy.att - 1
                 elif self.battle_cursor == 3:
                     if random.randrange(0, 2) == 1:
                         self.scene = 1
@@ -565,7 +582,7 @@ class Game(arcade.Window):
 
     def scene4_text(self):
         arcade.draw_text("R to Repair\n" + str(int(self.player.ship["hull"] - self.player.ship["current_hull"])), 102, 600, colors["white"])
-        arcade.draw_text("Z for Missiles\n" + str(int((self.player.ship["missile"] * 50) - self.player.stats["missiles"])), 102, 500,
+        arcade.draw_text("Z for Missiles\n" + str(3 * int((self.player.ship["missile"] * 50) - self.player.stats["missiles"])), 102, 500,
                          colors["white"])
         arcade.draw_text("C for Laser\n" + str(int((self.player.ship["laser"] * 100) - self.player.stats["energy"])), 102, 400,
                          colors["white"])
@@ -597,12 +614,14 @@ class Game(arcade.Window):
             except IndexError:
                 return
         if key == arcade.key.Z:
-            if self.player.stats["missiles"] < self.player.ship["missile"] * 50 and self.player.stats["credits"] >= (self.player.ship["missile"] * 50) - self.player.stats["missiles"]:
-                self.player.stats["credits"] -= (self.player.ship["missile"] * 50) - self.player.stats["missiles"]
+            if self.player.stats["missiles"] < self.player.ship["missile"] * 50 and self.player.stats["credits"] >= 3 * ((self.player.ship["missile"] * 50) - self.player.stats["missiles"]):
+                self.player.stats["credits"] -= 3 * ((self.player.ship["missile"] * 50) - self.player.stats["missiles"])
+                self.locations[self.player.location].credits += 3 * ((self.player.ship["missile"] * 50) - self.player.stats["missiles"])
                 self.player.stats["missiles"] = self.player.ship["missile"] * 50
         if key == arcade.key.C:
             if self.player.stats["energy"] < self.player.ship["laser"] * 100 and self.player.stats["credits"] >= (self.player.ship["laser"] * 100) - self.player.stats["energy"]:
                 self.player.stats["credits"] -= (self.player.ship["laser"] * 100) - self.player.stats["energy"]
+                self.locations[self.player.location].credits += (self.player.ship["laser"] * 100) - self.player.stats["energy"]
                 self.player.stats["energy"] = self.player.ship["laser"] * 100
         elif key == arcade.key.Q:
             try:
@@ -616,14 +635,14 @@ class Game(arcade.Window):
 
     def text_draw(self):
         if self.scene == 0:
-            for i in range(0, 16):
+            for i in range(0, 12):
                 if i % 2 == 0:
                     color = arcade.color.DARK_BLUE
                 else:
                     color = colors["sky"]
                 arcade.draw_circle_filled(400, 400, 360 - (20 * i), color)
             # arcade.draw_text("Star Gazer", 240, 440, arcade.color.AERO_BLUE, font_size=60)
-            arcade.draw_text("Press F to start", 350, 400, colors["white"])
+            arcade.draw_text((" " * 10) + "Instructions: \nF to toggle menu \nE to select option \nG to show nearest station \n       Press F to start", 300, 450, colors["black"], font_size=14)
         elif self.scene == 1:
             self.scene1_text()
         elif self.scene == 2:
