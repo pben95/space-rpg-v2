@@ -4,7 +4,6 @@ import math
 import timeit
 
 
-white = arcade.color.WHITE
 colors = {"white": arcade.color.WHITE, "black": arcade.color.BLACK, "red": arcade.color.RED, "sky": arcade.color.SKY_BLUE, "db": arcade.color.DARK_BLUE_GRAY}
 groups = ["Command", "Research", "Engineering", "Medical", "Security"]
 slots = [575, 475, 375, 275, 175]
